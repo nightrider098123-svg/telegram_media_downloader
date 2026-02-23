@@ -437,6 +437,7 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
     last_read_message_id = chat_conf.get(
         "last_read_message_id", global_config.get("last_read_message_id", 0)
     )
+    topic_id = chat_conf.get("topic_id", global_config.get("topic_id", None))
 
     start_date_val = chat_conf.get("start_date", global_config.get("start_date"))
     if isinstance(start_date_val, str) and start_date_val.strip():
@@ -481,8 +482,15 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
     else:
         download_directory = None
 
+    iter_messages_kwargs = {
+        "min_id": last_read_message_id,
+        "reverse": True,
+    }
+    if topic_id is not None and topic_id != 0:
+        iter_messages_kwargs["reply_to"] = topic_id
+
     messages_iter = client.iter_messages(
-        chat_id, min_id=last_read_message_id, reverse=True
+        chat_id, **iter_messages_kwargs
     )
     messages_list: list = []
     pagination_count: int = 0
