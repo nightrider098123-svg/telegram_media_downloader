@@ -215,9 +215,9 @@ async def mock_process_message(*args, **kwargs):
     return 5
 
 
-async def async_process_messages(client, messages, media_types, file_formats):
+async def async_process_messages(client, messages, media_types, file_formats, **kwargs):
     result = await process_messages(
-        client, messages, media_types, file_formats, chat_id="123"
+        client, messages, media_types, file_formats, chat_id="123", **kwargs
     )
     return result
 
@@ -1020,6 +1020,43 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(result, 1216)
 
+    def test_process_message_sequential(self):
+        client = MockClient()
+        result = self.loop.run_until_complete(
+            async_process_messages(
+                client,
+                [
+                    MockMessage(
+                        id=1213,
+                        media=True,
+                        voice=MockVoice(
+                            mime_type="audio/ogg",
+                            date=datetime(2019, 7, 25, 14, 53, 50),
+                        ),
+                    ),
+                    MockMessage(
+                        id=1214,
+                        media=False,
+                        text="test message 1",
+                    ),
+                    MockMessage(
+                        id=1215,
+                        media=False,
+                        text="test message 2",
+                    ),
+                    MockMessage(
+                        id=1216,
+                        media=False,
+                        text="test message 3",
+                    ),
+                ],
+                ["voice", "photo"],
+                {"audio": ["all"], "voice": ["all"]},
+                parallel_downloads=False,
+            )
+        )
+        self.assertEqual(result, 1216)
+
     @mock.patch("media_downloader._is_exist", return_value=True)
     @mock.patch(
         "media_downloader.manage_duplicate_file",
@@ -1143,6 +1180,21 @@ class MediaDownloaderTestCase(unittest.TestCase):
         self.assertEqual(chat_conf.get("last_read_message_id"), 1234)
         # update_config should have been called (checkpoint write)
         mock_update_config.assert_called()
+
+        # Verify parallel_downloads default is True
+        args, kwargs = mock_process_messages.call_args
+        self.assertTrue(args[6])  # parallel_downloads is the 7th argument
+
+        # Test with parallel_downloads=False
+        chat_conf = {"chat_id": 112, "parallel_downloads": False}
+        import media_downloader
+
+        media_downloader.DOWNLOADED_IDS[112] = []
+        self.loop.run_until_complete(
+            media_downloader.process_chat(client, conf, chat_conf, 1, asyncio.Lock())
+        )
+        args, kwargs = mock_process_messages.call_args
+        self.assertFalse(args[6])
 
         chat_conf = {
             "chat_id": 222,

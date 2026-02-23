@@ -366,6 +366,7 @@ async def process_messages(  # pylint: disable=too-many-positional-arguments
     file_formats: dict,
     chat_id: Union[int, str],
     download_directory: Optional[str] = None,
+    parallel_downloads: bool = True,
 ) -> int:
     """
     Download media from Telegram.
@@ -385,20 +386,36 @@ async def process_messages(  # pylint: disable=too-many-positional-arguments
         ID of the chat.
     download_directory: Optional[str]
         Custom directory path for downloads. If None, uses default structure.
+    parallel_downloads: bool
+        If True, download files in parallel. If False, download sequentially.
 
     Returns
     -------
     int
         Max value of list of message ids.
     """
-    message_ids = await asyncio.gather(
-        *[
-            download_media(
+    if parallel_downloads:
+        message_ids = await asyncio.gather(
+            *[
+                download_media(
+                    client,
+                    message,
+                    media_types,
+                    file_formats,
+                    chat_id,
+                    download_directory,
+                )
+                for message in messages
+            ]
+        )
+    else:
+        message_ids = []
+        for message in messages:
+            msg_id = await download_media(
                 client, message, media_types, file_formats, chat_id, download_directory
             )
-            for message in messages
-        ]
-    )
+            message_ids.append(msg_id)
+
     logger.info("Processed batch of %d messages for chat %s", len(messages), chat_id)
     last_message_id: int = max(message_ids)
     return last_message_id
@@ -482,6 +499,10 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
     else:
         download_directory = None
 
+    parallel_downloads = chat_conf.get(
+        "parallel_downloads", global_config.get("parallel_downloads", True)
+    )
+
     iter_messages_kwargs = {
         "min_id": last_read_message_id,
         "reverse": True,
@@ -522,6 +543,7 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
                 file_formats,
                 chat_id,
                 download_directory,
+                parallel_downloads,
             )
             # Memory cleanup for next batch
             CURRENT_BATCH_IDS[chat_id] = []
@@ -548,6 +570,7 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
             file_formats,
             chat_id,
             download_directory,
+            parallel_downloads,
         )
         CURRENT_BATCH_IDS[chat_id] = []
         PROCESSED_IDS[chat_id] = []
