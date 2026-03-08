@@ -41,6 +41,19 @@ def get_next_name(file_path: str) -> str:
     )
 
 
+def _get_file_md5(file_path: str) -> str:
+    """
+    Compute the MD5 hash of a file efficiently by reading in chunks.
+    This avoids high memory consumption for large media files.
+    """
+    hash_md5 = md5()
+    with open(file_path, "rb") as f:
+        # Read in 4MB chunks to balance memory usage and IO speed
+        for chunk in iter(lambda: f.read(4096 * 1024), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
+
 def manage_duplicate_file(file_path: str):
     """
     Check if a file is duplicate.
@@ -70,10 +83,24 @@ def manage_duplicate_file(file_path: str):
     )
     if file_path in old_files:
         old_files.remove(file_path)
-    current_file_md5: str = md5(open(file_path, "rb").read()).hexdigest()
+
+    # Optimization: Filter by file size first before doing expensive MD5 calculations
+    current_file_size = os.path.getsize(file_path)
+    current_file_md5 = None
+
     for old_file_path in old_files:
-        old_file_md5: str = md5(open(old_file_path, "rb").read()).hexdigest()
+        # If sizes differ, they cannot be duplicate files
+        if os.path.getsize(old_file_path) != current_file_size:
+            continue
+
+        # Lazily compute MD5 only if we find a file with the same size
+        if current_file_md5 is None:
+            current_file_md5 = _get_file_md5(file_path)
+
+        old_file_md5 = _get_file_md5(old_file_path)
+
         if current_file_md5 == old_file_md5:
             os.remove(file_path)
             return old_file_path
+
     return file_path
